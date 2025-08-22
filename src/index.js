@@ -1,16 +1,21 @@
-import express from "express";
 import DBConnection from "./db/dbConnection.js"
 import dotenv from "dotenv"
+import {app} from "app.js"
 
 dotenv.config();
 
-const app = express();
-
-
-DBConnection();
+DBConnection()
+.then(() => {
+    const port = process.env.PORT || 8080;
+    app.on("error", (error) => {
+        console.log("ERROR: ", error);
+    });
+    app.listen(port, () => {
+        console.log(`Server is Running at http://localhost:${port}`);
+    })
+})
+.catch((error) => {
+    console.log("Database Connection Failed:", error);
+})
 
 const port = process.env.PORT;
-
-app.listen( port, () =>{
-    console.log(`Server is Listening at http://localhost:${port}`);
-} );
