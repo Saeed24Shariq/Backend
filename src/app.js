@@ -9,9 +9,17 @@ app.use(cors(
         credentials: true
     }
 ));
-app.use(express.json("limit: 16kb"));
-app.use(express.urlencoded("limit: 16kb"));
+app.use(express.json({limit: "16kb"}));
+app.use(express.urlencoded({limit: "16kb"}));
 app.use(express.static("public"));
-app.use();
+app.use(cookieParser());
+
+// importing Router
+import router from "./routes/router.js"
+
+
+// using router
+app.use("/api/v1/user", router);
+
 
 export default app;
