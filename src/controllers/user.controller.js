@@ -3,7 +3,8 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadFile } from "../utils/cloudnary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import { upload } from "../middlewares/multer.middleware.js";
+import accessAndRefreshTokenGeneration from "./../utils/Access_Refresh_Generation.js";
+import jwt, { decode } from "jsonwebtoken";
 
 const registerUser = asyncHandler(async (req, res) => {
     // Data From Frontend
@@ -24,7 +25,7 @@ const registerUser = asyncHandler(async (req, res) => {
     const localFileAvatar = req.files?.avatar[0]?.path;
     console.log(localFileAvatar);
     let localFileCoverImage;
-    if(req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0){
+    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
         localFileCoverImage = req.files.coverImage[0].path;
     }
 
@@ -53,7 +54,7 @@ const registerUser = asyncHandler(async (req, res) => {
         }
     )
     // remove password and refresh token from the response
-    const createdUser = await User.findOne({username}).select(
+    const createdUser = await User.findOne({ username }).select(
         "-password -refreshToken"
     );
 
@@ -67,4 +68,120 @@ const registerUser = asyncHandler(async (req, res) => {
     )
 })
 
-export { registerUser };
+
+const loginUser = asyncHandler(async (req, res) => {
+    // data from frontend
+    const { username, password } = req.body;
+    // authenticate the data
+    if (!username && !password) {
+        throw new ApiError(400, "Username and password is required...");
+    }
+    const user = await User.findOne({ username });
+    // authenticate the password
+    if (! await user.isPasswordCorrect(password)) {
+        throw new ApiError(401, "Invalid Credentials");
+    }
+    // refresh and access token
+    const { accessToken, refreshToken } = await accessAndRefreshTokenGeneration(user._id);
+    // saving refresh token in database
+    user.refreshToken = refreshToken;
+    user.save(
+        {
+            validateBeforeSave: false
+        },
+        {
+            new: true
+        }
+    );
+    // setting the options for cookie
+    const options = {
+        httpsOnly: true,
+        secure: true
+    }
+    // return res and setting cookie and header
+    return res.
+        status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(200, "User Logined Sucessfullty....", user)
+        );
+
+});
+
+const logoutUser = asyncHandler(async (req, res) => {
+    const user = await User.findOneAndUpdate(
+        req.user._id,
+        {
+            $unset: {
+                refreshToken: ""
+            }
+        },
+        {
+            new: true
+        }
+    );
+
+    const options = {
+        httpsOnly: true,
+        secure: true
+    }
+    console.log(user.refreshToken)
+    return res
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(
+            new ApiResponse(200, "User Logout Sucessfully")
+        );
+})
+
+const refreshAcess = asyncHandler(async (req, res) => {
+    const incoomingRefreshToken = req.cookie?.refreshToken || req.header("Authorization")?.replace("Bearer", "");
+    if (!incoomingRefreshToken) {
+        throw new ApiError(401, "Invalid User");
+    }
+    const decodedToken = jwt.verify(incoomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
+
+    const user = await User.findById(decodedToken._id);
+
+    if (!user) {
+        throw new ApiError(401, "Invalid User Request");
+    }
+
+    if (user.refreshToken !== incoomingRefreshToken) {
+        throw new ApiError(401, "Unauthorized User");
+    }
+
+    console.log(await accessAndRefreshTokenGeneration(user._id));
+    const { accessToken, refreshToken } = await accessAndRefreshTokenGeneration(user._id);
+
+    console.log(accessToken);
+    console.log(refreshToken);
+
+    user.refreshToken = refreshToken;
+
+    user.save(
+        {
+            validateBeforeSave: false
+        },
+        {
+            new: true
+        }
+    )
+
+    const options = {
+        httpsOnly: true,
+        secure: true
+    }
+
+    return res.status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(200, "Access and Refresh Token Renewed")
+        );
+
+})
+
+export { registerUser, loginUser, logoutUser, refreshAcess };
